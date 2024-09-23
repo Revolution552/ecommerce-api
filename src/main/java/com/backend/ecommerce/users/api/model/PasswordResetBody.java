@@ -15,45 +15,37 @@ public class PasswordResetBody {
     @NotNull
     @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
             message = "Password must contain at least one letter, one number, and be at least 8 characters long")
-    @Size(min=6, max=50)
+    @Size(min = 8, max = 50)
     private String newPassword;
 
     @NotBlank
     @NotNull
     @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
             message = "Password must contain at least one letter, one number, and be at least 8 characters long")
-    @Size(min=6, max=50)
+    @Size(min = 8, max = 50)
     private String confirmPassword;
 
-    public @NotBlank @NotNull String getToken() {
+    public String getToken() {
         return token;
     }
 
-    public void setToken(@NotBlank @NotNull String token) {
+    public void setToken(String token) {
         this.token = token;
     }
 
-    public @NotBlank @NotNull @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
-            message = "Password must contain at least one letter, one number, and be at least 8 characters long") @Size(min = 6, max = 50)
-    String getNewPassword() {
+    public String getNewPassword() {
         return newPassword;
     }
 
-    public void setNewPassword(@NotBlank @NotNull @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
-            message = "Password must contain at least one letter, one number, and be at least 8 characters long") @Size(min = 6, max = 50)
-                               String newPassword) {
+    public void setNewPassword(String newPassword) {
         this.newPassword = newPassword;
     }
 
-    public @NotBlank @NotNull @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
-            message = "Password must contain at least one letter, one number, and be at least 8 characters long") @Size(min = 6, max = 50)
-    String getConfirmPassword() {
+    public String getConfirmPassword() {
         return confirmPassword;
     }
 
-    public void setConfirmPassword(@NotBlank @NotNull @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d]{8,}$",
-            message = "Password must contain at least one letter, one number, and be at least 8 characters long") @Size(min = 6, max = 50)
-                                   String confirmPassword) {
+    public void setConfirmPassword(String confirmPassword) {
         this.confirmPassword = confirmPassword;
     }
 

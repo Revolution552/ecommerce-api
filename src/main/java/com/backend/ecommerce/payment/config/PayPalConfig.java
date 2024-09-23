@@ -20,7 +20,7 @@ public class PayPalConfig {
     private String clientSecret;
 
     @Value("${paypal.mode}")
-    private String mode;  // sandbox or live
+    private String mode;
 
     @Bean
     public Map<String, String> paypalSdkConfig() {
@@ -31,13 +31,25 @@ public class PayPalConfig {
 
     @Bean
     public OAuthTokenCredential oAuthTokenCredential() {
-        return new OAuthTokenCredential(clientId, clientSecret, paypalSdkConfig());
+        try {
+            return new OAuthTokenCredential(clientId, clientSecret, paypalSdkConfig());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create OAuthTokenCredential", e);
+        }
     }
 
     @Bean
-    public APIContext apiContext() throws PayPalRESTException {
-        APIContext context = new APIContext(oAuthTokenCredential().getAccessToken());
-        context.setConfigurationMap(paypalSdkConfig());
-        return context;
+    public APIContext apiContext() {
+        try {
+            OAuthTokenCredential credential = oAuthTokenCredential();
+            String accessToken = credential.getAccessToken();
+            APIContext context = new APIContext(accessToken);
+            context.setConfigurationMap(paypalSdkConfig());
+            return context;
+        } catch (PayPalRESTException e) {
+            throw new RuntimeException("Failed to create PayPal APIContext: " + e.getMessage(), e);
+        } catch (Exception e) {
+            throw new RuntimeException("General error while creating PayPal APIContext: " + e.getMessage(), e);
+        }
     }
 }

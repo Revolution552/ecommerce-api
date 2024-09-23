@@ -34,6 +34,11 @@ public class PayPalController {
 
         Order order = orderOpt.get();
 
+        // Validate total price is greater than zero
+        if (order.getTotalPrice() <= 0) {
+            return ResponseEntity.status(400).body(Map.of("error", "Order total price must be greater than zero"));
+        }
+
         try {
             Payment payment = paypalService.createPayment(
                     order.getTotalPrice(),  // Ensure this method exists and returns the correct total
@@ -56,6 +61,7 @@ public class PayPalController {
 
         return ResponseEntity.status(500).body(Map.of("error", "Payment creation failed"));
     }
+
 
     @GetMapping("/success")
     public ResponseEntity<?> successPay(@RequestParam("paymentId") String paymentId,

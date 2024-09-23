@@ -18,6 +18,11 @@ public class PayPalService {
     public Payment createPayment(Double total, String currency, String method, String intent,
                                  String description, String cancelUrl, String successUrl) throws PayPalRESTException {
 
+        if (total == null || currency == null || method == null || intent == null ||
+                description == null || cancelUrl == null || successUrl == null) {
+            throw new IllegalArgumentException("One or more input parameters are null.");
+        }
+
         // Create the amount object
         Amount amount = new Amount();
         amount.setCurrency(currency);
@@ -49,10 +54,18 @@ public class PayPalService {
         payment.setRedirectUrls(redirectUrls);
 
         // Create the payment using PayPal API
-        return payment.create(apiContext);
+        try {
+            return payment.create(apiContext);
+        } catch (PayPalRESTException e) {
+            throw new PayPalRESTException("Failed to create PayPal payment: " + e.getMessage(), e);
+        }
     }
 
     public Payment executePayment(String paymentId, String payerId) throws PayPalRESTException {
+        if (paymentId == null || payerId == null) {
+            throw new IllegalArgumentException("Payment ID or Payer ID is null.");
+        }
+
         Payment payment = new Payment();
         payment.setId(paymentId);
 
@@ -60,6 +73,10 @@ public class PayPalService {
         paymentExecution.setPayerId(payerId);
 
         // Execute the payment using the APIContext
-        return payment.execute(apiContext, paymentExecution);
+        try {
+            return payment.execute(apiContext, paymentExecution);
+        } catch (PayPalRESTException e) {
+            throw new PayPalRESTException("Failed to execute PayPal payment: " + e.getMessage(), e);
+        }
     }
 }

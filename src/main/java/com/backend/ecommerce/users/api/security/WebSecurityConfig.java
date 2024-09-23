@@ -19,9 +19,10 @@ public class WebSecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.csrf().disable().cors().disable();
+        http.cors().disable();
         http.addFilterBefore(jwtRequestFilter, AuthorizationFilter.class);
         http.authorizeHttpRequests()
-                .requestMatchers( "/auth/register", "/auth/login", "/auth/verify", "/auth/me", "/auth/forgot",
+                .requestMatchers( "/auth/register", "/auth/login", "/auth/logout", "/auth/verify", "/auth/me", "/auth/forgot",
                         "/auth/reset", "/user/**").permitAll()
                 .anyRequest().authenticated();
         return http.build();

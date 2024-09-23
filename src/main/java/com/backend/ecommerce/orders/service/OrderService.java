@@ -4,8 +4,10 @@ import com.backend.ecommerce.orders.model.Order;
 import com.backend.ecommerce.orders.model.OrderStatus;
 import com.backend.ecommerce.orders.model.dao.OrderDAO;
 import com.backend.ecommerce.users.model.LocalUser;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,12 +33,16 @@ public class OrderService {
         return orderDAO.findByUserId(user.getId());
     }
 
-    // Find order by ID
+    // Find order by ID with items initialized to avoid LazyInitializationException
+    @Transactional
     public Optional<Order> findOrderById(Long orderId) {
-        return orderDAO.findById(orderId);
+        Optional<Order> orderOpt = orderDAO.findById(orderId);
+        orderOpt.ifPresent(order -> Hibernate.initialize(order.getItems())); // Initialize lazy-loaded collection
+        return orderOpt;
     }
 
     // Update order status
+    @Transactional
     public Order updateOrderStatus(Long orderId, OrderStatus newStatus, LocalUser user) {
         Optional<Order> orderOpt = orderDAO.findById(orderId);
 
@@ -49,17 +55,21 @@ public class OrderService {
         }
     }
 
-    // Get order details by order ID
+    // Get order details by order ID with items initialized
+    @Transactional
     public Order getOrderById(Long orderId, LocalUser user) {
         Optional<Order> orderOpt = orderDAO.findById(orderId);
         if (orderOpt.isPresent() && orderOpt.get().getUser().getId().equals(user.getId())) {
-            return orderOpt.get();
+            Order order = orderOpt.get();
+            Hibernate.initialize(order.getItems());  // Initialize lazy-loaded collection
+            return order;
         } else {
             throw new IllegalArgumentException("Access denied or order not found");
         }
     }
 
     // Delete an order by order ID
+    @Transactional
     public boolean deleteOrder(Long orderId, LocalUser user) {
         Optional<Order> orderOpt = orderDAO.findById(orderId);
         if (orderOpt.isPresent() && orderOpt.get().getUser().getId().equals(user.getId())) {

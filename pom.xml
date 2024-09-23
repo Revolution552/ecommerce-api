@@ -103,6 +103,7 @@
 			<artifactId>paypal-core</artifactId>
 			<version>1.7.2</version>
 		</dependency>
+
 	</dependencies>
 
 	<build>

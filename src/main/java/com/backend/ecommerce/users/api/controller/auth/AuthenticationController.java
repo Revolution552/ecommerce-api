@@ -1,20 +1,19 @@
 package com.backend.ecommerce.users.api.controller.auth;
 
-import com.backend.ecommerce.users.api.model.LoginBody;
-import com.backend.ecommerce.users.api.model.PasswordResetBody;
-import com.backend.ecommerce.users.api.model.RegistrationBody;
+import com.backend.ecommerce.users.api.model.*;
 import com.backend.ecommerce.users.exception.EmailFailureException;
 import com.backend.ecommerce.users.exception.EmailNotFoundException;
 import com.backend.ecommerce.users.exception.UserAlreadyExistsException;
 import com.backend.ecommerce.users.exception.UserNotVerifiedException;
-import com.backend.ecommerce.users.model.LocalUser;
+import com.backend.ecommerce.users.service.JWTService;
 import com.backend.ecommerce.users.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.hibernate.LazyInitializationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.Map;
@@ -25,9 +24,11 @@ public class AuthenticationController {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationController.class);
     private final UserService userService;
+    private final JWTService jwtService;
 
-    public AuthenticationController(UserService userService) {
+    public AuthenticationController(UserService userService, JWTService jwtService) {
         this.userService = userService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/register")
@@ -64,7 +65,6 @@ public class AuthenticationController {
             return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
-
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> loginUser(@Valid @RequestBody LoginBody loginBody) {
         Map<String, Object> response = new HashMap<>();
@@ -87,11 +87,13 @@ public class AuthenticationController {
         } catch (UserNotVerifiedException ex) {
             logger.warn("User not verified: {}", loginBody.getUsername());
             response.put("success", false);
-            String reason = "USER_NOT_VERIFIED";
-            if (ex.istNewEmailSent()) {
-                reason += "_EMAIL_RESENT";
-            }
+            String reason = "Email is not verified, can't login.";
             response.put("message", reason);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+        } catch (LazyInitializationException ex) {
+            logger.error("LazyInitializationException occurred for user: {}", loginBody.getUsername(), ex);
+            response.put("success", false);
+            response.put("message", "Email is not verified, can't login.");
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (EmailFailureException ex) {
             logger.error("Failed to send verification email for user: {}", loginBody.getUsername(), ex);
@@ -107,8 +109,15 @@ public class AuthenticationController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<Map<String, Object>> verifyEmail(@RequestParam String token) {
+    public ResponseEntity<Map<String, Object>> verifyEmail(@RequestBody Map<String, String> payload) {
+        String token = payload.get("token");
         Map<String, Object> response = new HashMap<>();
+
+        if (token == null || token.isEmpty()) {
+            response.put("success", false);
+            response.put("message", "Token cannot be null or empty.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        }
 
         if (userService.verifyUser(token)) {
             response.put("success", true);
@@ -118,6 +127,37 @@ public class AuthenticationController {
             response.put("success", false);
             response.put("message", "Invalid or expired verification token.");
             return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Map<String, Object>> logout(HttpServletRequest request) {
+        String tokenHeader = request.getHeader("Authorization");
+        Map<String, Object> response = new HashMap<>();
+
+        if (tokenHeader != null && tokenHeader.startsWith("Bearer ")) {
+            String token = tokenHeader.substring(7);
+            String username = jwtService.getUsername(token);
+
+            // Log the logout request
+            logger.info("Logout request received for user: {}", username);
+
+            // Option 1: Invalidate the token server-side (if applicable)
+            jwtService.invalidateToken(token);
+            logger.info("Token invalidated successfully for user: {}", username);
+
+            // Option 2: Handle token removal client-side (e.g., removing token from local storage)
+            response.put("success", true);
+            response.put("message", "You have been successfully logged out.");
+            logger.info("User logged out successfully: {}", username);
+
+            return ResponseEntity.ok(response);
+        } else {
+            // Log missing or invalid token
+            logger.warn("Logout attempt failed due to missing or invalid Authorization token.");
+            response.put("success", false);
+            response.put("message", "Authorization token not found.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
         }
     }
 
@@ -143,7 +183,6 @@ public class AuthenticationController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
-
     @PostMapping("/reset")
     public ResponseEntity<Map<String, Object>> resetPassword(@Valid @RequestBody PasswordResetBody body) {
         Map<String, Object> response = new HashMap<>();
@@ -161,6 +200,11 @@ public class AuthenticationController {
                 response.put("message", "Password reset failed. Please check the token or the new password.");
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
             }
+        } catch (IllegalArgumentException ex) {
+            logger.warn("Password reset failed due to invalid arguments: {}", body.getToken(), ex);
+            response.put("success", false);
+            response.put("message", "Invalid token or password confirmation failed.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
         } catch (Exception ex) {
             logger.error("Failed to reset password for token: {}", body.getToken(), ex);
             response.put("success", false);
@@ -168,5 +212,6 @@ public class AuthenticationController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
         }
     }
+
 
 }

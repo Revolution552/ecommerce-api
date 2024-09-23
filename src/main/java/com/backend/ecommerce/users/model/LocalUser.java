@@ -44,9 +44,6 @@ public class LocalUser implements UserDetails {
     @Column(name = "phone_number", nullable = false, unique = true)
     private String phoneNumber;
 
-
-  //  @OneToMany(mappedBy = "user", cascade = CascadeType.REMOVE, orphanRemoval = true)
-    //private List<Address> addresses = new ArrayList<>();
     @JsonIgnore
     @OneToMany(fetch = FetchType.EAGER, mappedBy = "user")
     private List<Address> addresses;

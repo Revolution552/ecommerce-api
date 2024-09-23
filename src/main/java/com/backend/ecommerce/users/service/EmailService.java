@@ -35,8 +35,7 @@ public class EmailService {
         SimpleMailMessage message = makeMailMessage();
         message.setTo(verificationToken.getUser().getEmail());
         message.setSubject("Verify Your Email to Activate Your Account");
-        message.setText("Please Follow the Link Below to Verify Your Email to Activate Your Account.\n" +
-                url + "/auth/verify?token=" + verificationToken.getToken());
+        message.setText("Your verification token is: " + verificationToken.getToken());
         try {
             javaMailSender.send(message);
         } catch (MailException ex) {
@@ -48,8 +47,7 @@ public class EmailService {
         SimpleMailMessage message = makeMailMessage();
         message.setTo(user.getEmail());
         message.setSubject("Reset Your Password");
-        message.setText("You Requested a Password reset. Please: " + "Click the link below to reset your password.\n"
-                + url + "/auth/reset?token=" + token);
+        message.setText("Your password reset token is: " + token);
         try {
             javaMailSender.send(message);
         } catch (MailException ex) {

@@ -8,6 +8,8 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 @Service
 public class JWTService {
@@ -61,4 +63,17 @@ public class JWTService {
         DecodedJWT jwt = JWT.require(algorithm).withIssuer(issuer).build().verify(token);
         return jwt.getClaim(USERNAME_KEY).asString();
     }
+
+    private Set<String> invalidatedTokens = new HashSet<>();
+
+    // Invalidate the JWT token on logout
+    public void invalidateToken(String token) {
+        invalidatedTokens.add(token);
+    }
+
+    // Check if the token is invalidated
+    public boolean isTokenInvalidated(String token) {
+        return invalidatedTokens.contains(token);
+    }
+
 }
