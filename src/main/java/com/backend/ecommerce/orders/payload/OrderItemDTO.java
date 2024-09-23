@@ -1,22 +1,32 @@
 package com.backend.ecommerce.orders.payload;
 
 public class OrderItemDTO {
-    private String productName;
+    private Long productId;
     private int quantity;
     private Double price;
 
-    public OrderItemDTO(String productName, int quantity, Double price) {
-        this.productName = productName;
+    public OrderItemDTO(Long productId, int quantity, Double price) {
+        if (productId == null) {
+            throw new IllegalArgumentException("Product ID cannot be null");
+        }
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero");
+        }
+        if (price == null || price < 0) {
+            throw new IllegalArgumentException("Price must be a non-negative value");
+        }
+
+        this.productId = productId;
         this.quantity = quantity;
         this.price = price;
     }
 
-    public String getProductName() {
-        return productName;
+    public Long getProductId() {
+        return productId;
     }
 
-    public void setProductName(String productName) {
-        this.productName = productName;
+    public void setProductId(Long productId) {
+        this.productId = productId;
     }
 
     public int getQuantity() {
@@ -24,6 +34,9 @@ public class OrderItemDTO {
     }
 
     public void setQuantity(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero");
+        }
         this.quantity = quantity;
     }
 
@@ -32,7 +45,18 @@ public class OrderItemDTO {
     }
 
     public void setPrice(Double price) {
+        if (price < 0) {
+            throw new IllegalArgumentException("Price must be a non-negative value");
+        }
         this.price = price;
     }
-    // Constructor, getters, and setters
+
+    @Override
+    public String toString() {
+        return "OrderItemDTO{" +
+                "productId=" + productId +
+                ", quantity=" + quantity +
+                ", price=" + price +
+                '}';
+    }
 }

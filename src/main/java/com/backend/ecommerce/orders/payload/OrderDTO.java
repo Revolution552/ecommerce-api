@@ -57,5 +57,4 @@ public class OrderDTO {
     public void setItems(List<OrderItemDTO> items) {
         this.items = items;
     }
-    // Constructor, getters, and setters
 }

@@ -44,22 +44,38 @@ public class ProductService {
     }
 
     public List<Product> getAllProducts() {
+        logger.info("Fetching all products");
         return productDAO.findAll();
     }
 
     @Transactional
     public Product updateProduct(Long productId, Product productDetails) {
         Product product = productDAO.findById(productId)
-                .orElseThrow(() -> new RuntimeException("Product not found"));
+                .orElseThrow(() -> {
+                    logger.error("Product not found: {}", productId);
+                    return new RuntimeException("Product not found");
+                });
         product.setName(productDetails.getName());
         product.setDescription(productDetails.getDescription());
         product.setPrice(productDetails.getPrice());
-        logger.info("Product updated successfully: {}", product.getId());
-        return productDAO.save(product);
+
+        Product updatedProduct = productDAO.save(product);
+        logger.info("Product updated successfully: {}", updatedProduct.getId());
+        return updatedProduct;
     }
 
     public void deleteProduct(Long productId) {
+        if (!productDAO.existsById(productId)) {
+            logger.error("Attempted to delete non-existent product: {}", productId);
+            throw new RuntimeException("Product not found");
+        }
+
         productDAO.deleteById(productId);
         logger.info("Product deleted successfully: {}", productId);
+    }
+
+    // Fetch products by category
+    public List<Product> getProductsByCategory(Long categoryId) {
+        return productDAO.findByCategoryId(categoryId);
     }
 }

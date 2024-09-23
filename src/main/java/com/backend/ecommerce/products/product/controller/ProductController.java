@@ -57,4 +57,19 @@ public class ProductController {
         logger.info("Product with ID: {} deleted successfully", id);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/category/{categoryId}")
+    public ResponseEntity<?> getProductsByCategory(@PathVariable Long categoryId) {
+        logger.info("Fetching products for category ID: {}", categoryId);
+
+        List<Product> products = productService.getProductsByCategory(categoryId);
+
+        if (products.isEmpty()) {
+            logger.warn("No products found for category ID: {}", categoryId);
+            return ResponseEntity.status(404).body("No products found for this category.");
+        }
+
+        logger.info("Found {} products for category ID: {}", products.size(), categoryId);
+        return ResponseEntity.ok(products);
+    }
 }

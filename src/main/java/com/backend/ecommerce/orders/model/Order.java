@@ -8,7 +8,7 @@ import java.util.Date;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")  // Changed table name to "orders" to avoid SQL syntax issues
+@Table(name = "orders")
 public class Order {
 
     @Id
@@ -23,17 +23,25 @@ public class Order {
     @Temporal(TemporalType.TIMESTAMP)
     private Date orderDate;
 
-    private Double totalAmount;
+    @Column(name = "total_amount")
+    private double totalAmount; // Total amount can be calculated based on items
 
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<OrderItem> items;
 
-    private double totalPrice;
+    // Calculate total price based on items
+    public double calculateTotalAmount() {
+        if (items == null || items.isEmpty()) {
+            return 0.0;
+        }
+        return items.stream().mapToDouble(item -> item.getPrice() * item.getQuantity()).sum();
+    }
 
-
+    // Getters and setters
     public Long getId() {
         return id;
     }
@@ -80,16 +88,7 @@ public class Order {
 
     public void setItems(List<OrderItem> items) {
         this.items = items;
-    }
-
-    public double getTotalPrice() {
-        if (items == null || items.isEmpty()) {
-            return 0.0;
-        }
-        return items.stream().mapToDouble(item -> item.getPrice() * item.getQuantity()).sum();
-    }
-
-    public void setTotalPrice(double totalPrice) {
-        this.totalPrice = totalPrice;
+        // Update total amount whenever items are set
+        this.totalAmount = calculateTotalAmount();
     }
 }

@@ -1,6 +1,10 @@
 package com.backend.ecommerce.orders.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Min;
+
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "order_items")
@@ -10,14 +14,17 @@ public class OrderItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "order_id")
     private Order order;
 
-    private String productName;
-    private int quantity;
-    private Double price;
+    private Long productId;
 
+    private int quantity;
+
+    @Min(value = 0, message = "Price must be a non-negative value")
+    private Double price;
 
     public Long getId() {
         return id;
@@ -35,12 +42,12 @@ public class OrderItem {
         this.order = order;
     }
 
-    public String getProductName() {
-        return productName;
+    public Long getProductId() {  // Getter for productId
+        return productId;
     }
 
-    public void setProductName(String productName) {
-        this.productName = productName;
+    public void setProductId(Long productId) {  // Setter for productId
+        this.productId = productId;
     }
 
     public int getQuantity() {

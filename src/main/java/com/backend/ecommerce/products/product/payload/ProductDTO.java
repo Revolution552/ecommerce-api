@@ -13,7 +13,7 @@ public class ProductDTO {
     @NotNull
     private String description;
     @NotNull
-    private BigDecimal price;
+    private Double price;
 
     private String imageUrl;
 
@@ -35,11 +35,11 @@ public class ProductDTO {
         this.description = description;
     }
 
-    public @NotNull BigDecimal getPrice() {
+    public Double getPrice() {
         return price;
     }
 
-    public void setPrice(@NotNull BigDecimal price) {
+    public void setPrice(@NotNull Double price) {
         this.price = price;
     }
 
