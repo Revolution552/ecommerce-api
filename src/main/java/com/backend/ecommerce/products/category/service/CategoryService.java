@@ -5,6 +5,7 @@ import com.backend.ecommerce.products.category.model.Category;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class CategoryService {
@@ -23,7 +24,8 @@ public class CategoryService {
         return categoryDAO.save(category);
     }
 
-    public Category getCategoryById(Long id) {
-        return categoryDAO.findById(id).orElse(null);
+    // Updated method to return an Optional<Category>
+    public Optional<Category> getCategoryById(Long id) {
+        return categoryDAO.findById(id);
     }
 }

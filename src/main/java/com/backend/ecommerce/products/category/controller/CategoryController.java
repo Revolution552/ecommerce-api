@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api")
@@ -41,12 +42,13 @@ public class CategoryController {
     @GetMapping("/category/{id}")
     public ResponseEntity<Category> getCategoryById(@PathVariable Long id) {
         logger.info("Request received: Fetching category with ID: {}", id);
-        Category category = categoryService.getCategoryById(id);
-        if (category == null) {
-            logger.warn("Category with ID: {} not found", id);
-            return ResponseEntity.notFound().build();
-        }
-        logger.info("Category with ID: {} found and returned", id);
-        return ResponseEntity.ok(category);
+        Optional<Category> category = categoryService.getCategoryById(id);
+
+        return category
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> {
+                    logger.warn("Category with ID: {} not found", id);
+                    return ResponseEntity.notFound().build();
+                });
     }
 }

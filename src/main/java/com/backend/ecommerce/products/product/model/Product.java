@@ -1,19 +1,23 @@
 package com.backend.ecommerce.products.product.model;
 
 import com.backend.ecommerce.products.category.model.Category;
-import com.backend.ecommerce.users.model.LocalUser;
+import com.backend.ecommerce.products.shop.model.Shop;
+import com.backend.ecommerce.user.model.User;
+import com.backend.ecommerce.user.repository.UserRepository;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
-
-import java.math.BigDecimal;
+import lombok.NoArgsConstructor;
 
 @Getter
 @Setter
+@NoArgsConstructor
 @Entity
 @Table(name = "products")
 public class Product {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -27,64 +31,42 @@ public class Product {
     @Column(length = 500)
     private String description;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
+    @NotNull
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "shop_id", nullable = false)
+    private Shop shop;
+
+    @Column(nullable = false)
+    private int popularity;
+
+    @Column(nullable = false)
+    private double rating;
 
     private String imageUrl;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JsonIgnore
     @JoinColumn(name = "user_id", nullable = false)
-    private LocalUser user; // The user who posted the product
+    private User user; // The user who posted the product
 
-    // Other fields, Getters, and Setters
-    public Long getId() {
-        return id;
-    }
+    // Adding a method to get the UserDTO instead of the entire User object
+//    public UserRepository getUserRepository() {
+//        return new UserRepository(user.getId(), user.getEmail()) {
+//        };
+//    }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
+    public Product(String name, Double price, String description, Category category, int popularity, double rating, String imageUrl, User user) {
         this.name = name;
-    }
-
-    public Double getPrice() {
-        return price;
-    }
-
-    public void setPrice(Double price) {
         this.price = price;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
         this.description = description;
-    }
-
-    public Category getCategory() {
-        return category;
-    }
-
-    public void setCategory(Category category) {
         this.category = category;
-    }
-
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
-    public void setImageUrl(String imageUrl) {
+        this.popularity = popularity;
+        this.rating = rating;
         this.imageUrl = imageUrl;
+        this.user = user;
     }
 }

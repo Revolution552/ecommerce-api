@@ -1,61 +1,43 @@
 package com.backend.ecommerce.products.product.payload;
 
+import com.backend.ecommerce.user.model.User;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Min;
 import lombok.Getter;
 import lombok.Setter;
-import java.math.BigDecimal;
 
 @Getter
 @Setter
 public class ProductDTO {
-    @NotNull
+
+    @NotNull(message = "Product name is required")
     private String name;
-    @NotNull
+
+    @NotNull(message = "Product description is required")
     private String description;
-    @NotNull
+
+    @NotNull(message = "Product price is required")
+    @Positive(message = "Price must be a positive value")
     private Double price;
 
     private String imageUrl;
 
+    @NotNull(message = "Category ID is required")
+    @Min(value = 1, message = "Category ID must be a positive integer")
     private Long categoryId;
 
-    public @NotNull String getName() {
-        return name;
-    }
+    @NotNull(message = "Shop ID is required")
+    @Min(value = 1, message = "Shop ID must be a positive integer")
+    private Long shopId;
 
-    public void setName(@NotNull String name) {
-        this.name = name;
-    }
+    private Long Id;
 
-    public @NotNull String getDescription() {
-        return description;
-    }
+    private User user;
 
-    public void setDescription(@NotNull String description) {
-        this.description = description;
-    }
+    private String categoryName;  // New field to show category name
 
-    public Double getPrice() {
-        return price;
-    }
+    private String shopName;  // New field to show shop name
 
-    public void setPrice(@NotNull Double price) {
-        this.price = price;
-    }
-
-    public String getImageUrl() {
-        return imageUrl;
-    }
-
-    public void setImageUrl(String imageUrl) {
-        this.imageUrl = imageUrl;
-    }
-
-    public Long getCategoryId() {
-        return categoryId;
-    }
-
-    public void setCategoryId(Long categoryId) {
-        this.categoryId = categoryId;
-    }
+    // Lombok's @Getter and @Setter will automatically generate getter and setter methods.
 }
