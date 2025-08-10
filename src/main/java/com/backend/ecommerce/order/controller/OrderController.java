@@ -2,8 +2,10 @@ package com.backend.ecommerce.order.controller;
 
 import com.backend.ecommerce.order.model.OrderStatus;
 import com.backend.ecommerce.order.payload.OrderDTO;
-import com.backend.ecommerce.order.payload.OrderRequestDTO; // New import
+import com.backend.ecommerce.order.payload.OrderRequestDTO;
 import com.backend.ecommerce.order.service.OrderService;
+import com.backend.ecommerce.payments.PaymentRequestDTO;
+import com.backend.ecommerce.user.model.User;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -11,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -60,6 +63,46 @@ public class OrderController {
             return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         } catch (RuntimeException e) {
             logger.error("Unexpected error during order creation: {}", e.getMessage(), e);
+            response.put("success", false);
+            response.put("message", "An unexpected error occurred: " + e.getMessage());
+            return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Creates a new order from the user's cart and processes payment.
+     * POST /api/orders/from-cart
+     *
+     * @param user The authenticated user.
+     * @param paymentRequestDTO The PaymentRequestDTO containing payment details.
+     * @return ResponseEntity with the created OrderDTO.
+     */
+    @PostMapping("/from-cart")
+    public ResponseEntity<Map<String, Object>> createOrderFromCart(@AuthenticationPrincipal User user,
+                                                                   @Valid @RequestBody PaymentRequestDTO paymentRequestDTO) {
+        Map<String, Object> response = new HashMap<>();
+        if (user == null) {
+            logger.warn("Unauthorized attempt to create order from cart (no authenticated user).");
+            response.put("success", false);
+            response.put("message", "Authentication required.");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        }
+
+        logger.info("Attempting to create an order from cart for user ID: {}", user.getId());
+        try {
+            OrderDTO createdOrder = orderService.createOrderFromCart(user.getId(), paymentRequestDTO);
+            logger.info("Order from cart created successfully with ID: {} for user ID: {}", createdOrder.getId(), user.getId());
+            response.put("success", true);
+            response.put("message", "Order from cart created successfully!");
+            response.put("order", createdOrder);
+            return new ResponseEntity<>(response, HttpStatus.CREATED);
+        } catch (IllegalArgumentException e) {
+            logger.error("Error creating order from cart: {}", e.getMessage());
+            response.put("success", false);
+            response.put("message", "Error creating order from cart: " + e.getMessage());
+            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+        } catch (RuntimeException e) {
+            logger.error("Unexpected error during order creation from cart for user {}: {}", user.getId(), e.getMessage(), e);
             response.put("success", false);
             response.put("message", "An unexpected error occurred: " + e.getMessage());
             return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);

@@ -1,12 +1,14 @@
 package com.backend.ecommerce.order.service;
 
+import com.backend.ecommerce.cart.payload.CartDTO;
+import com.backend.ecommerce.cart.service.CartService;
 import com.backend.ecommerce.order.dao.OrderDAO;
 import com.backend.ecommerce.order.model.Order;
 import com.backend.ecommerce.order.model.OrderItem;
 import com.backend.ecommerce.order.model.OrderStatus;
 import com.backend.ecommerce.order.payload.OrderDTO;
 import com.backend.ecommerce.order.payload.OrderItemDTO;
-import com.backend.ecommerce.order.payload.OrderRequestDTO; // New import
+import com.backend.ecommerce.order.payload.OrderRequestDTO;
 import com.backend.ecommerce.payments.PaymentRequestDTO;
 import com.backend.ecommerce.payments.thewallet.payload.TheWalletInitiateResponse;
 import com.backend.ecommerce.payments.thewallet.service.TheWalletService;
@@ -33,14 +35,16 @@ public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private final OrderDAO orderDAO;
-    private final PaymentService paymentService; // Assuming this is your existing PayPal service
-    private final TheWalletService theWalletService; // New service for TheWallet integration
+    private final PaymentService paymentService;
+    private final TheWalletService theWalletService;
+    private final CartService cartService; // New dependency
 
     @Autowired
-    public OrderService(OrderDAO orderDAO, PaymentService paymentService, TheWalletService theWalletService) {
+    public OrderService(OrderDAO orderDAO, PaymentService paymentService, TheWalletService theWalletService, CartService cartService) {
         this.orderDAO = orderDAO;
         this.paymentService = paymentService;
         this.theWalletService = theWalletService;
+        this.cartService = cartService;
     }
 
     /**
@@ -64,12 +68,11 @@ public class OrderService {
                 .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Create the order with PENDING status initially
         Order order = Order.builder()
                 .userId(orderDTO.getUserId())
                 .totalAmount(calculatedTotalAmount)
                 .status(OrderStatus.PENDING)
-                .paymentStatus("PENDING") // Set initial payment status to PENDING
+                .paymentStatus("PENDING")
                 .build();
 
         List<OrderItem> orderItems = orderDTO.getOrderItems().stream()
@@ -82,9 +85,8 @@ public class OrderService {
 
         order.setOrderItems(orderItems);
 
-        Order savedOrder = orderDAO.save(order); // Save the order to get an ID
+        Order savedOrder = orderDAO.save(order);
 
-        // --- Payment Integration Step ---
         try {
             switch (paymentRequestDTO.getPaymentMethod().toUpperCase()) {
                 case "PAYPAL":
@@ -109,11 +111,11 @@ public class OrderService {
                             paymentRequestDTO.getChannel(),
                             paymentRequestDTO.getTarget(),
                             savedOrder.getId().toString()
-                    ).block(); // Block and wait for the synchronous response
+                    ).block();
 
                     if (walletResponse != null && Boolean.TRUE.equals(walletResponse.getSuccess())) {
                         savedOrder.setStatus(OrderStatus.PROCESSING);
-                        savedOrder.setPaymentStatus("PENDING_CALLBACK"); // Awaiting callback confirmation
+                        savedOrder.setPaymentStatus("PENDING_CALLBACK");
                         log.info("TheWallet Push USSD initiated successfully for order {}. TheWallet Ref: {}",
                                 savedOrder.getId(), walletResponse.getReference());
                     } else {
@@ -139,11 +141,53 @@ public class OrderService {
             orderDAO.save(savedOrder);
             throw new RuntimeException("Error processing payment for order ID: " + savedOrder.getId(), e);
         }
-        // --- End Payment Integration Step ---
 
         Order finalOrder = orderDAO.save(savedOrder);
         log.info("Order created successfully with ID: {}", finalOrder.getId());
         return convertToDTO(finalOrder);
+    }
+
+    /**
+     * Creates an order from a user's existing cart and clears the cart.
+     *
+     * @param userId The ID of the user.
+     * @param paymentRequestDTO The PaymentRequestDTO specifying payment details.
+     * @return The created OrderDTO.
+     * @throws IllegalArgumentException if the cart is empty or payment details are invalid.
+     * @throws RuntimeException if an error occurs during order creation or payment.
+     */
+    @Transactional
+    public OrderDTO createOrderFromCart(Long userId, PaymentRequestDTO paymentRequestDTO) {
+        log.info("Attempting to create an order from cart for user ID: {}", userId);
+
+        CartDTO cartDTO = cartService.getOrCreateCart(userId);
+
+        if (cartDTO.getCartItems() == null || cartDTO.getCartItems().isEmpty()) {
+            log.error("Failed to create order for user ID: {}. Cart is empty.", userId);
+            throw new IllegalArgumentException("Cannot create an order from an empty cart.");
+        }
+
+        // Convert CartDTO to OrderRequestDTO
+        OrderDTO orderDetails = OrderDTO.builder()
+                .userId(userId)
+                .orderItems(cartDTO.getCartItems().stream()
+                        .map(cartItem -> OrderItemDTO.builder()
+                                .productId(cartItem.getProductId())
+                                .quantity(cartItem.getQuantity())
+                                .price(cartItem.getPrice())
+                                .build())
+                        .collect(Collectors.toList()))
+                .build();
+
+        OrderRequestDTO orderRequestDTO = new OrderRequestDTO(orderDetails, paymentRequestDTO);
+
+        OrderDTO createdOrder = createOrder(orderRequestDTO);
+
+        // Clear the user's cart after a successful order creation
+        cartService.clearCart(userId);
+        log.info("Cart for user ID: {} cleared successfully after order creation.", userId);
+
+        return createdOrder;
     }
 
     /**
