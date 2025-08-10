@@ -49,6 +49,14 @@ public class SecurityConfig {
 
                         // Admin endpoints
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        // Product and Shop creation/update/delete endpoints for Admin only
+                        .requestMatchers(
+                                "/products", // POST for createProduct
+                                "/products/{id}", // PUT for updateProduct, DELETE for deleteProduct
+                                "/shops", // POST for createShop
+                                "/shops/{id}"
+                        ).hasAuthority("ROLE_ADMIN")
+
 
                         // Authenticated endpoints
                         .anyRequest().authenticated()

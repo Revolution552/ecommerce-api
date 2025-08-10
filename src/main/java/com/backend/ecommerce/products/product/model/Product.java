@@ -3,10 +3,10 @@ package com.backend.ecommerce.products.product.model;
 import com.backend.ecommerce.products.category.model.Category;
 import com.backend.ecommerce.products.shop.model.Shop;
 import com.backend.ecommerce.user.model.User;
-import com.backend.ecommerce.user.repository.UserRepository;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @Setter
 @NoArgsConstructor
+@AllArgsConstructor // Automatically generates a constructor with all fields
 @Entity
 @Table(name = "products")
 public class Product {
@@ -52,21 +53,4 @@ public class Product {
     @JsonIgnore
     @JoinColumn(name = "user_id", nullable = false)
     private User user; // The user who posted the product
-
-    // Adding a method to get the UserDTO instead of the entire User object
-//    public UserRepository getUserRepository() {
-//        return new UserRepository(user.getId(), user.getEmail()) {
-//        };
-//    }
-
-    public Product(String name, Double price, String description, Category category, int popularity, double rating, String imageUrl, User user) {
-        this.name = name;
-        this.price = price;
-        this.description = description;
-        this.category = category;
-        this.popularity = popularity;
-        this.rating = rating;
-        this.imageUrl = imageUrl;
-        this.user = user;
-    }
 }
