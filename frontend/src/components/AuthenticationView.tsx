@@ -1,24 +1,25 @@
-"use client";
+"use client"; // This marks the component as a Client Component in Next.js
 
 import React from 'react';
 import MessageDisplay from './MessageDisplay'; // Assuming MessageDisplay is in the same directory
 
+// --- Props interface for AuthenticationView ---
 interface AuthenticationViewProps {
     username: string;
-    setUsername: (username: string) => void;
+    setUsername: React.Dispatch<React.SetStateAction<string>>; // Keep as React.Dispatch for useState compatibility
     password: string;
-    setPassword: (password: string) => void;
+    setPassword: React.Dispatch<React.SetStateAction<string>>; // Keep as React.Dispatch for useState compatibility
     handleLogin: (event: React.FormEvent) => Promise<void>;
-    loginLoading: boolean;
-    loginError: string | null;
-    loginSuccessMessage: string | null;
+    loading: boolean; // Renamed from loginLoading to match AccountDashboard's prop
+    error: string | null; // Renamed from loginError to match AccountDashboard's prop
+    successMessage: string | null; // Renamed from loginSuccessMessage to match AccountDashboard's prop
     onRegisterClick: () => void; // Callback to switch to registration view
     onForgotPasswordClick: () => void; // Callback to switch to forgot password view
 }
 
 const AuthenticationView: React.FC<AuthenticationViewProps> = ({
                                                                    username, setUsername, password, setPassword,
-                                                                   handleLogin, loginLoading, loginError, loginSuccessMessage,
+                                                                   handleLogin, loading, error, successMessage, // Using corrected prop names
                                                                    onRegisterClick, onForgotPasswordClick
                                                                }) => (
     <>
@@ -61,11 +62,11 @@ const AuthenticationView: React.FC<AuthenticationViewProps> = ({
 
             <button
                 type="submit"
-                disabled={loginLoading}
+                disabled={loading} // Using corrected prop name
                 className={`w-full py-3 px-6 rounded-full font-bold text-white transition-all duration-300 ease-in-out shadow-lg flex items-center justify-center space-x-2
-                    ${loginLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 transform hover:scale-105 active:scale-95'}`}
+                    ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 transform hover:scale-105 active:scale-95'}`}
             >
-                {loginLoading ? (
+                {loading ? ( // Using corrected prop name
                     <>
                         <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -99,14 +100,15 @@ const AuthenticationView: React.FC<AuthenticationViewProps> = ({
             </button>
         </div>
 
+        {/* Display messages using the MessageDisplay component */}
         <MessageDisplay
             type="error"
-            message={loginError}
+            message={error} // Using corrected prop name
         />
 
         <MessageDisplay
             type="success"
-            message={loginSuccessMessage}
+            message={successMessage} // Using corrected prop name
         />
     </>
 );

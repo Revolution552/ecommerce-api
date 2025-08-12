@@ -9,10 +9,9 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 @Data
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ShopDTO extends Shop {
+public class ShopDTO {
 
     private Long id;
 
@@ -27,4 +26,6 @@ public class ShopDTO extends Shop {
 
     @NotNull(message = "User ID is required")
     private Long userId;
+
+    private String logoUrl; // New field for the shop's logo URL
 }

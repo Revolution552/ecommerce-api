@@ -22,6 +22,9 @@ public class Shop {
     private String location;
     private String description;
 
+    @Column
+    private String logoUrl; // New field for the shop's logo URL
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user; // Owner of the shop
@@ -72,6 +75,14 @@ public class Shop {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getLogoUrl() {
+        return logoUrl;
+    }
+
+    public void setLogoUrl(String logoUrl) {
+        this.logoUrl = logoUrl;
     }
 
     public User getUser() {
