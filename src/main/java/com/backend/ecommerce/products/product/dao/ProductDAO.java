@@ -30,20 +30,22 @@ public interface ProductDAO extends ListCrudRepository<Product, Long> {
             @Param("order") String order
     );
 
-
+    // Updated to use categoryName instead of categoryId
     @Query("SELECT p FROM Product p " +
             "WHERE (:keyword IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
             "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
-            "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
+            "AND (:categoryName IS NULL OR LOWER(p.category.name) LIKE LOWER(CONCAT('%', :categoryName, '%'))) " + // Changed here
             "AND (:minPrice IS NULL OR p.price >= :minPrice) " +
             "AND (:maxPrice IS NULL OR p.price <= :maxPrice)")
     List<Product> searchProducts(
             @Param("keyword") String keyword,
-            @Param("categoryId") Long categoryId,
+            @Param("categoryName") String categoryName, // Changed parameter type and name
             @Param("minPrice") Double minPrice,
             @Param("maxPrice") Double maxPrice
     );
 
     List<Product> findByCategoryId(Long categoryId);
+
+    List<Product> findByNameContainingIgnoreCase(String name);
 
 }

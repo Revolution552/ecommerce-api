@@ -225,10 +225,11 @@ public class ProductController {
     }
 
     /**
-     * Searches for products based on a keyword, category, and price range.
+     * Searches for products based on a general keyword, category name, and price range.
+     * This endpoint uses the more comprehensive 'searchProducts' method in the service.
      *
      * @param keyword Optional keyword to search in product names and descriptions.
-     * @param categoryId Optional category ID.
+     * @param categoryName Optional category name.
      * @param minPrice Optional minimum price.
      * @param maxPrice Optional maximum price.
      * @return A list of products matching the search criteria.
@@ -236,19 +237,19 @@ public class ProductController {
     @GetMapping("/search")
     public ResponseEntity<Map<String, Object>> searchProducts(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String categoryName, // Changed from Long categoryId to String categoryName
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice) {
 
         Map<String, Object> response = new HashMap<>();
-        logger.info("Search request received: keyword='{}', categoryId={}, minPrice={}, maxPrice={}",
-                keyword, categoryId, minPrice, maxPrice);
+        logger.info("Search request received: keyword='{}', categoryName={}, minPrice={}, maxPrice={}",
+                keyword, categoryName, minPrice, maxPrice);
 
-        List<ProductResponseDTO> products = productService.searchProducts(keyword, categoryId, minPrice, maxPrice);
+        List<ProductResponseDTO> products = productService.searchProducts(keyword, categoryName, minPrice, maxPrice); // Updated call
 
         if (products.isEmpty()) {
             logger.warn("Search result: No products found.");
-            response.put("success", true); // No products found is a valid outcome, not a failure.
+            response.put("success", true);
             response.put("message", "No products found matching the search criteria.");
             response.put("products", products);
             return ResponseEntity.ok(response);
@@ -259,5 +260,40 @@ public class ProductController {
         response.put("message", "Products found successfully.");
         response.put("products", products);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Retrieves products by name, supporting partial and case-insensitive matching.
+     * This uses the newly added service method.
+     *
+     * @param name The name or part of the name to search for.
+     * @return A list of products whose names contain the given keyword.
+     */
+    @GetMapping("/by-name")
+    public ResponseEntity<Map<String, Object>> getProductsByName(@RequestParam String name) {
+        Map<String, Object> response = new HashMap<>();
+        logger.info("Request received: Searching products by name: {}", name);
+        try {
+            List<ProductResponseDTO> products = productService.getProductsByName(name);
+
+            if (products.isEmpty()) {
+                logger.warn("No products found with name containing: {}", name);
+                response.put("success", true);
+                response.put("message", "No products found with name containing '" + name + "'.");
+                response.put("products", products);
+                return ResponseEntity.ok(response);
+            }
+
+            logger.info("Found {} products with name containing: {}", products.size(), name);
+            response.put("success", true);
+            response.put("message", "Products retrieved by name successfully.");
+            response.put("products", products);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Error searching products by name {}: {}", name, e.getMessage(), e);
+            response.put("success", false);
+            response.put("message", "Failed to search products by name: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        }
     }
 }

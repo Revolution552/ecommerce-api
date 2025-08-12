@@ -186,29 +186,52 @@ public class ProductService {
     }
 
     /**
-     * Searches for products based on a keyword, category, and price range.
+     * Searches for products based on a keyword, category name, and price range.
+     * This method now specifically includes searching by product name using a keyword.
      *
      * @param keyword Optional keyword to search in product names and descriptions.
-     * @param categoryId Optional category ID.
+     * @param categoryName Optional category name.
      * @param minPrice Optional minimum price.
      * @param maxPrice Optional maximum price.
      * @return A list of products matching the search criteria.
      */
-    public List<ProductResponseDTO> searchProducts(String keyword, Long categoryId, Double minPrice, Double maxPrice) {
-        List<Product> products = productDAO.searchProducts(keyword, categoryId, minPrice, maxPrice);
+    public List<ProductResponseDTO> searchProducts(String keyword, String categoryName, Double minPrice, Double maxPrice) { // Changed categoryId to categoryName (String)
+        logger.info("Searching products with criteria: keyword='{}', categoryName={}, minPrice={}, maxPrice={}", // Logging updated
+                keyword, categoryName, minPrice, maxPrice);
+
+        List<Product> products = productDAO.searchProducts(keyword, categoryName, minPrice, maxPrice); // Passed categoryName
 
         if (products.isEmpty()) {
-            logger.warn("No products found for the search criteria: keyword='{}', categoryId={}, minPrice={}, maxPrice={}",
-                    keyword, categoryId, minPrice, maxPrice);
+            logger.warn("No products found for the search criteria.");
         } else {
-            logger.info("Search successful. Found {} products for the criteria: keyword='{}', categoryId={}, minPrice={}, maxPrice={}",
-                    products.size(), keyword, categoryId, minPrice, maxPrice);
+            logger.info("Search successful. Found {} products for the criteria.", products.size());
         }
 
         return products.stream()
                 .map(this::convertToResponseDTO)
                 .collect(Collectors.toList());
     }
+
+    /**
+     * Searches for products specifically by their name (case-insensitive and partial match).
+     *
+     * @param name The name or part of the name to search for.
+     * @return A list of products whose names contain the given keyword.
+     */
+    public List<ProductResponseDTO> getProductsByName(String name) {
+        logger.info("Searching products by name: {}", name);
+        // Assuming ProductDAO has a method like findByNameContainingIgnoreCase
+        List<Product> products = productDAO.findByNameContainingIgnoreCase(name);
+        if (products.isEmpty()) {
+            logger.warn("No products found with name containing: {}", name);
+        } else {
+            logger.info("Found {} products with name containing: {}", products.size(), name);
+        }
+        return products.stream()
+                .map(this::convertToResponseDTO)
+                .collect(Collectors.toList());
+    }
+
 
     /**
      * A helper method to convert a Product entity to a ProductResponseDTO.
