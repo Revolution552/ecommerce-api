@@ -34,33 +34,95 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+
+
+// In SecurityConfig.java, update the authorizeHttpRequests section:
+
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
                         .requestMatchers(
-                                "/api/users/register/**", // Use wildcard for robustness
-                                "/api/users/verify/**",   // Use wildcard for robustness
-                                "/api/users/login",       // Exact match for login
-                                "/api/users/logout",      // Exact match for logout
-                                "/api/users/forgot/**",   // Use wildcard for robustness (if parameters are used)
-                                "/api/users/reset/**",    // NEW: Use wildcard for reset password
+                                "/api/users/register/**",
+                                "/api/users/verify/**",
+                                "/api/users/login",
+                                "/api/users/logout",
+                                "/api/users/forgot/**",
+                                "/api/users/reset/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
 
+                        // Guest cart endpoints (public)
+                        .requestMatchers("/api/guest/cart/**").permitAll()
+
+                        // Public order tracking (no authentication required)
+                        .requestMatchers("/api/orders/track/**").permitAll()
+
+                        // Public shop endpoints
+                        .requestMatchers(
+                                "/api/shops",
+                                "/api/shops/featured",
+                                "/api/shops/search",
+                                "/api/shops/slug/**",
+                                "/api/shops/*"
+                        ).permitAll()
+
+                        // Public product endpoints
+                        .requestMatchers(
+                                "/api/products",
+                                "/api/products/filter",
+                                "/api/products/search",
+                                "/api/products/featured",
+                                "/api/products/on-sale",
+                                "/api/products/category/**",
+                                "/api/products/shop/**",
+                                "/api/products/slug/**",
+                                "/api/products/*"
+                        ).permitAll()
+
+                        // Public category endpoints
+                        .requestMatchers(
+                                "/api/categories",
+                                "/api/categories/tree",
+                                "/api/categories/featured",
+                                "/api/categories/menu",
+                                "/api/categories/root",
+                                "/api/categories/*/subcategories",
+                                "/api/categories/*/breadcrumb",
+                                "/api/categories/slug/**",
+                                "/api/categories/*"
+                        ).permitAll()
+
+                        // Seller registration (authenticated users only)
+                        .requestMatchers("/api/seller/register", "/api/seller/profile", "/api/seller/status").authenticated()
+
+                        // Seller shop endpoints (verified sellers only)
+                        .requestMatchers("/api/seller/shop/**").authenticated()
+
+                        // Seller product endpoints (verified sellers only)
+                        .requestMatchers("/api/seller/products/**").authenticated()
+
+                        // Seller order endpoints (verified sellers only)
+                        .requestMatchers("/api/seller/orders/**").authenticated()
+
+                        // Favorites endpoints (authenticated users only)
+                        .requestMatchers("/api/favorites/**").authenticated()
+
+                        // Cart endpoints (authenticated users only)
+                        .requestMatchers("/api/cart/**").authenticated()
+
+                        // Order endpoints (authenticated users only except tracking)
+                        .requestMatchers("/api/orders/**").authenticated()
+
                         // Admin endpoints
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
-                        // Product and Shop creation/update/delete endpoints for Admin only
-                        .requestMatchers(
-                                "/products", // POST for createProduct
-                                "/products/{id}", // PUT for updateProduct, DELETE for deleteProduct
-                                "/shops", // POST for createShop
-                                "/shops/{id}"
-                        ).hasAuthority("ROLE_ADMIN")
-
 
                         // Authenticated endpoints
                         .anyRequest().authenticated()
                 )
+
+
+
+
                 .exceptionHandling(exception ->
                         exception
                                 .authenticationEntryPoint((request, response, authException) -> {
@@ -79,7 +141,7 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
-        config.setAllowedOrigins(List.of("http://localhost:3000")); // Update with your frontend URL
+        config.setAllowedOrigins(List.of("http://localhost:5173")); // Update with your frontend URL
         config.setAllowedHeaders(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setExposedHeaders(List.of("Authorization"));

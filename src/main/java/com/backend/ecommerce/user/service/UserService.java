@@ -1,8 +1,8 @@
 package com.backend.ecommerce.user.service;
 
-import com.backend.ecommerce.user.dto.LoginRequest;
-import com.backend.ecommerce.user.dto.RegisterRequest;
-import com.backend.ecommerce.user.dto.UserResponseDto;
+import com.backend.ecommerce.user.payload.LoginRequest;
+import com.backend.ecommerce.user.payload.RegisterRequest;
+import com.backend.ecommerce.user.payload.UserResponseDto;
 import com.backend.ecommerce.user.exception.EmailFailureException;
 import com.backend.ecommerce.user.exception.EmailNotFoundException;
 import com.backend.ecommerce.user.exception.UserAlreadyExistsException;

@@ -1,45 +1,94 @@
 // src/main/java/com/backend/ecommerce/order/model/OrderItem.java
-package com.backend.ecommerce.order.model; // Changed package name
+package com.backend.ecommerce.order.model;
 
+import com.backend.ecommerce.product.model.Product;
+import com.backend.ecommerce.shop.model.Shop;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.math.BigDecimal;
-import java.util.UUID;
+import java.time.LocalDateTime;
 
-/**
- * Represents an item within an Order.
- * This class maps to the 'order_items' table in the database.
- * Uses Lombok for boilerplate code (getters, setters, constructors).
- */
 @Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 @Table(name = "order_items")
-@Data // Generates getters, setters, toString, equals, and hashCode
-@NoArgsConstructor // Generates a no-argument constructor
-@AllArgsConstructor // Generates a constructor with all fields
-@Builder // Provides a builder pattern for object creation
 public class OrderItem {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO) // Generates a unique ID for each order item
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long productId; // ID of the product ordered
-
-    @Column(nullable = false)
-    private Integer quantity; // Quantity of the product
-
-    @Column(nullable = false)
-    private BigDecimal price; // Price per unit of the product at the time of order
-
-    // Many order items can belong to one order.
-    // LAZY fetch type: The associated Order will be fetched only when explicitly accessed.
-    // JOIN column: 'order_id' in the 'order_items' table will store the ID of the parent order.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id", nullable = false)
-    private Order order; // Reference to the parent Order
+    @JsonIgnore
+    private Order order;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_id", nullable = false)
+    private Product product;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "shop_id", nullable = false)
+    private Shop shop;
+
+    @Column(name = "product_name", nullable = false)
+    private String productName;
+
+    @Column(name = "product_sku")
+    private String productSku;
+
+    @Column(name = "product_image")
+    private String productImage;
+
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity;
+
+    @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal unitPrice;
+
+    @Column(name = "compare_at_price", precision = 10, scale = 2)
+    private BigDecimal compareAtPrice;
+
+    @Column(name = "total_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal totalPrice;
+
+    @Column(name = "discount", precision = 10, scale = 2)
+    private BigDecimal discount = BigDecimal.ZERO;
+
+    @Column(name = "tax", precision = 10, scale = 2)
+    private BigDecimal tax = BigDecimal.ZERO;
+
+    @Column(name = "notes")
+    private String notes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_status")
+    private FulfillmentStatus fulfillmentStatus = FulfillmentStatus.PENDING;
+
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        calculateTotalPrice();
+    }
+
+    public void calculateTotalPrice() {
+        if (unitPrice != null && quantity != null) {
+            this.totalPrice = unitPrice.multiply(BigDecimal.valueOf(quantity));
+        }
+    }
+
+    public BigDecimal getSavings() {
+        if (compareAtPrice != null && compareAtPrice.compareTo(unitPrice) > 0) {
+            return compareAtPrice.subtract(unitPrice).multiply(BigDecimal.valueOf(quantity));
+        }
+        return BigDecimal.ZERO;
+    }
 }

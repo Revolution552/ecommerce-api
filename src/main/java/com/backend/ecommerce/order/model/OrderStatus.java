@@ -1,14 +1,25 @@
 // src/main/java/com/backend/ecommerce/order/model/OrderStatus.java
-package com.backend.ecommerce.order.model; // Changed package name
+package com.backend.ecommerce.order.model;
 
-/**
- * Enum to define the possible statuses of an order.
- */
 public enum OrderStatus {
-    PENDING,
-    PROCESSING,
-    SHIPPED,
-    DELIVERED,
-    CANCELLED,
-    RETURNED
+    PENDING("Pending"),
+    CONFIRMED("Confirmed"),
+    PROCESSING("Processing"),
+    SHIPPED("Shipped"),
+    DELIVERED("Delivered"),
+    COMPLETED("Completed"),
+    CANCELLED("Cancelled"),
+    REFUNDED("Refunded"),
+    ON_HOLD("On Hold"),
+    PAYMENT_FAILED("Payment Failed");
+
+    private final String description;
+
+    OrderStatus(String description) {
+        this.description = description;
+    }
+
+    public String getDescription() {
+        return description;
+    }
 }

@@ -1,270 +1,647 @@
+// src/main/java/com/backend/ecommerce/order/service/OrderService.java
 package com.backend.ecommerce.order.service;
 
-import com.backend.ecommerce.cart.payload.CartDTO;
-import com.backend.ecommerce.cart.service.CartService;
-import com.backend.ecommerce.order.dao.OrderDAO;
-import com.backend.ecommerce.order.model.Order;
-import com.backend.ecommerce.order.model.OrderItem;
-import com.backend.ecommerce.order.model.OrderStatus;
-import com.backend.ecommerce.order.payload.OrderDTO;
-import com.backend.ecommerce.order.payload.OrderItemDTO;
-import com.backend.ecommerce.order.payload.OrderRequestDTO;
-import com.backend.ecommerce.payments.PaymentRequestDTO;
-import com.backend.ecommerce.payments.thewallet.payload.TheWalletInitiateResponse;
-import com.backend.ecommerce.payments.thewallet.service.TheWalletService;
-import jakarta.persistence.EntityNotFoundException;
+import com.backend.ecommerce.cart.exception.CartNotFoundException;
+import com.backend.ecommerce.cart.model.Cart;
+import com.backend.ecommerce.cart.model.CartItem;
+import com.backend.ecommerce.cart.repository.CartRepository;
+import com.backend.ecommerce.order.exception.*;
+import com.backend.ecommerce.order.model.*;
+import com.backend.ecommerce.order.payload.*;
+import com.backend.ecommerce.order.repository.OrderItemRepository;
+import com.backend.ecommerce.order.repository.OrderRepository;
+import com.backend.ecommerce.product.exception.InsufficientStockException;
+import com.backend.ecommerce.product.model.Product;
+import com.backend.ecommerce.product.repository.ProductRepository;
+import com.backend.ecommerce.user.exception.EmailFailureException;
+import com.backend.ecommerce.user.model.User;
+import com.backend.ecommerce.user.repository.UserRepository;
+import com.backend.ecommerce.user.service.EmailService;
+import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
-import java.util.Optional;
+import java.time.LocalDateTime;
+import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Service layer for managing Order-related business logic.
- * Handles operations like creating, retrieving, updating, and deleting orders,
- * and performs mapping between DTOs and models.
- */
 @Service
 public class OrderService {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+    private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
 
-    private final OrderDAO orderDAO;
-    private final PaymentService paymentService;
-    private final TheWalletService theWalletService;
-    private final CartService cartService; // New dependency
+    private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
+    private final CartRepository cartRepository;
+    private final EmailService emailService;
 
-    @Autowired
-    public OrderService(OrderDAO orderDAO, PaymentService paymentService, TheWalletService theWalletService, CartService cartService) {
-        this.orderDAO = orderDAO;
-        this.paymentService = paymentService;
-        this.theWalletService = theWalletService;
-        this.cartService = cartService;
+    private static final BigDecimal TAX_RATE = BigDecimal.ZERO;
+    private static final BigDecimal SHIPPING_COST = BigDecimal.ZERO;
+    private static final int PAYMENT_TIMEOUT_MINUTES = 30;
+
+    public OrderService(OrderRepository orderRepository,
+                        OrderItemRepository orderItemRepository,
+                        UserRepository userRepository,
+                        ProductRepository productRepository,
+                        CartRepository cartRepository,
+                        EmailService emailService) {
+        this.orderRepository = orderRepository;
+        this.orderItemRepository = orderItemRepository;
+        this.userRepository = userRepository;
+        this.productRepository = productRepository;
+        this.cartRepository = cartRepository;
+        this.emailService = emailService;
     }
 
-    /**
-     * Creates a new order and initiates payment based on the provided DTOs.
-     *
-     * @param orderRequestDTO The OrderRequestDTO containing order and payment details.
-     * @return The created OrderDTO with generated ID and status.
-     * @throws IllegalArgumentException if order items are empty or invalid.
-     * @throws RuntimeException if payment processing fails.
-     */
     @Transactional
-    public OrderDTO createOrder(OrderRequestDTO orderRequestDTO) {
-        OrderDTO orderDTO = orderRequestDTO.getOrderDetails();
-        PaymentRequestDTO paymentRequestDTO = orderRequestDTO.getPaymentDetails();
+    public OrderResponseDto createOrder(String userEmail, CreateOrderRequest request)
+            throws OrderValidationException, InsufficientStockException {
 
-        if (orderDTO.getOrderItems() == null || orderDTO.getOrderItems().isEmpty()) {
-            throw new IllegalArgumentException("Order must contain at least one item.");
+        logger.info("Creating order for user: {}", userEmail);
+
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Validate items
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new OrderValidationException("Order must contain at least one item");
         }
 
-        BigDecimal calculatedTotalAmount = orderDTO.getOrderItems().stream()
-                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
+        // Create order
         Order order = Order.builder()
-                .userId(orderDTO.getUserId())
-                .totalAmount(calculatedTotalAmount)
+                .user(user)
                 .status(OrderStatus.PENDING)
-                .paymentStatus("PENDING")
+                .paymentStatus(PaymentStatus.PENDING)
+                .fulfillmentStatus(FulfillmentStatus.PENDING)
+                .currency("USD")
+                .customerNotes(request.getCustomerNotes())
+                .couponCode(request.getCouponCode())
                 .build();
 
-        List<OrderItem> orderItems = orderDTO.getOrderItems().stream()
-                .map(itemDTO -> OrderItem.builder()
-                        .productId(itemDTO.getProductId())
-                        .quantity(itemDTO.getQuantity())
-                        .price(itemDTO.getPrice())
-                        .build())
-                .collect(Collectors.toList());
+        Order savedOrder = orderRepository.save(order);
 
-        order.setOrderItems(orderItems);
+        // Create shipping address
+        OrderShipping shipping = createShipping(savedOrder, request.getShippingAddress());
+        savedOrder.setShipping(shipping);
 
-        Order savedOrder = orderDAO.save(order);
+        // Create payment record
+        OrderPayment payment = createPayment(savedOrder, request.getPaymentMethod(), savedOrder.getTotal());
+        savedOrder.setPayment(payment);
 
+        // Process order items
+        List<OrderItem> orderItems = new ArrayList<>();
+        for (OrderItemRequest itemRequest : request.getItems()) {
+            OrderItem orderItem = createOrderItem(savedOrder, itemRequest);
+            orderItems.add(orderItem);
+        }
+        savedOrder.setItems(orderItems);
+
+        // Calculate totals
+        savedOrder.setShippingCost(SHIPPING_COST);
+        savedOrder.setTax(TAX_RATE.multiply(savedOrder.getSubtotal()));
+        savedOrder.calculateTotals();
+        savedOrder.getPayment().setAmount(savedOrder.getTotal());
+
+        // Add status history
+        savedOrder.addStatusHistory(null, OrderStatus.PENDING, "Order created", user);
+
+        Order finalOrder = orderRepository.save(savedOrder);
+
+        // Clear user's cart
+        clearUserCart(user);
+
+        // Send order confirmation email
         try {
-            switch (paymentRequestDTO.getPaymentMethod().toUpperCase()) {
-                case "PAYPAL":
-                    log.info("Attempting PayPal payment for Order ID: {} with amount: {}", savedOrder.getId(), savedOrder.getTotalAmount());
-                    boolean paymentSuccessful = paymentService.processPayment(savedOrder.getId(), savedOrder.getTotalAmount());
-                    if (paymentSuccessful) {
-                        savedOrder.setStatus(OrderStatus.PROCESSING);
-                        savedOrder.setPaymentStatus("PAID");
-                    } else {
-                        savedOrder.setStatus(OrderStatus.CANCELLED);
-                        savedOrder.setPaymentStatus("FAILED");
-                        throw new RuntimeException("PayPal payment failed for order ID: " + savedOrder.getId());
-                    }
-                    break;
+            emailService.sendOrderConfirmationEmail(user, finalOrder);
+        } catch (EmailFailureException e) {
+            logger.error("Failed to send order confirmation email", e);
+        }
 
-                case "THEWALLET":
-                    log.info("Attempting TheWallet payment for Order ID: {} with amount: {} via channel: {}",
-                            savedOrder.getId(), savedOrder.getTotalAmount(), paymentRequestDTO.getChannel());
-                    TheWalletInitiateResponse walletResponse = theWalletService.initiatePushUssd(
-                            paymentRequestDTO.getMsisdn(),
-                            savedOrder.getTotalAmount().toPlainString(),
-                            paymentRequestDTO.getChannel(),
-                            paymentRequestDTO.getTarget(),
-                            savedOrder.getId().toString()
-                    ).block();
+        logger.info("Order created successfully. Order number: {}", finalOrder.getOrderNumber());
+        return mapToResponseDto(finalOrder);
+    }
 
-                    if (walletResponse != null && Boolean.TRUE.equals(walletResponse.getSuccess())) {
-                        savedOrder.setStatus(OrderStatus.PROCESSING);
-                        savedOrder.setPaymentStatus("PENDING_CALLBACK");
-                        log.info("TheWallet Push USSD initiated successfully for order {}. TheWallet Ref: {}",
-                                savedOrder.getId(), walletResponse.getReference());
-                    } else {
-                        String errorMessage = walletResponse != null && walletResponse.getError() != null ?
-                                walletResponse.getError().getMessage() : "Unknown error from TheWallet.";
-                        savedOrder.setStatus(OrderStatus.CANCELLED);
-                        savedOrder.setPaymentStatus("FAILED_INITIATION");
-                        log.error("TheWallet Push USSD initiation failed for order {}: {}", savedOrder.getId(), errorMessage);
-                        throw new RuntimeException("TheWallet payment initiation failed: " + errorMessage);
-                    }
-                    break;
+    @Transactional
+    public OrderResponseDto createOrderFromCart(String userEmail, CreateOrderFromCartRequest request)
+            throws CartNotFoundException, OrderValidationException, InsufficientStockException {
 
-                default:
-                    log.warn("Unsupported payment method requested: {}", paymentRequestDTO.getPaymentMethod());
-                    savedOrder.setStatus(OrderStatus.CANCELLED);
-                    savedOrder.setPaymentStatus("FAILED_UNSUPPORTED_METHOD");
-                    throw new IllegalArgumentException("Unsupported payment method: " + paymentRequestDTO.getPaymentMethod());
+        logger.info("Creating order from cart for user: {}", userEmail);
+
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Cart cart = cartRepository.findByUser(user)
+                .orElseThrow(() -> new CartNotFoundException("Cart not found"));
+
+        List<CartItem> selectedItems = cart.getItems().stream()
+                .filter(CartItem::getIsSelected)
+                .collect(Collectors.toList());
+
+        if (selectedItems.isEmpty()) {
+            throw new OrderValidationException("No items selected in cart");
+        }
+
+        // Convert cart items to order item requests
+        List<OrderItemRequest> itemRequests = selectedItems.stream()
+                .map(cartItem -> {
+                    OrderItemRequest itemRequest = new OrderItemRequest();
+                    itemRequest.setProductId(cartItem.getProduct().getId());
+                    itemRequest.setQuantity(cartItem.getQuantity());
+                    itemRequest.setNotes(cartItem.getNotes());
+                    return itemRequest;
+                })
+                .collect(Collectors.toList());
+
+        CreateOrderRequest orderRequest = new CreateOrderRequest();
+        orderRequest.setItems(itemRequests);
+        orderRequest.setShippingAddress(request.getShippingAddress());
+        orderRequest.setPaymentMethod(request.getPaymentMethod());
+        orderRequest.setCouponCode(request.getCouponCode());
+        orderRequest.setCustomerNotes(request.getCustomerNotes());
+        orderRequest.setShippingMethod(request.getShippingMethod());
+
+        return createOrder(userEmail, orderRequest);
+    }
+
+    @Transactional
+    public OrderResponseDto updateOrderStatus(String orderNumber, UpdateOrderStatusRequest request, User changedBy)
+            throws OrderNotFoundException, InvalidOrderStatusTransitionException {
+
+        logger.info("Updating order status for order: {} to {}", orderNumber, request.getStatus());
+
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
+
+        validateStatusTransition(order.getStatus(), request.getStatus());
+
+        OrderStatus previousStatus = order.getStatus();
+        order.setStatus(request.getStatus());
+
+        // Update timestamps based on status
+        updateOrderTimestamps(order, request.getStatus());
+
+        // Update shipping info if provided
+        if (request.getTrackingNumber() != null && order.getShipping() != null) {
+            order.getShipping().setTrackingNumber(request.getTrackingNumber());
+            order.getShipping().setTrackingUrl(request.getTrackingUrl());
+            order.getShipping().setCarrier(request.getCarrier());
+
+            if (request.getStatus() == OrderStatus.SHIPPED) {
+                order.getShipping().setShippedAt(LocalDateTime.now());
+                order.setFulfillmentStatus(FulfillmentStatus.SHIPPED);
             }
-        } catch (Exception e) {
-            log.error("Error processing payment for order ID: {}. Exception: {}", savedOrder.getId(), e.getMessage(), e);
-            savedOrder.setStatus(OrderStatus.CANCELLED);
-            savedOrder.setPaymentStatus("FAILED");
-            orderDAO.save(savedOrder);
-            throw new RuntimeException("Error processing payment for order ID: " + savedOrder.getId(), e);
         }
 
-        Order finalOrder = orderDAO.save(savedOrder);
-        log.info("Order created successfully with ID: {}", finalOrder.getId());
-        return convertToDTO(finalOrder);
+        if (request.getStatus() == OrderStatus.DELIVERED && order.getShipping() != null) {
+            order.getShipping().setDeliveredAt(LocalDateTime.now());
+            order.setFulfillmentStatus(FulfillmentStatus.DELIVERED);
+        }
+
+        // Add status history
+        order.addStatusHistory(previousStatus, request.getStatus(), request.getNotes(), changedBy);
+
+        Order updatedOrder = orderRepository.save(order);
+
+        // Send status update email
+        try {
+            emailService.sendOrderStatusUpdateEmail(order.getUser(), updatedOrder);
+        } catch (EmailFailureException e) {
+            logger.error("Failed to send order status update email", e);
+        }
+
+        logger.info("Order status updated successfully for order: {}", orderNumber);
+        return mapToResponseDto(updatedOrder);
     }
 
-    /**
-     * Creates an order from a user's existing cart and clears the cart.
-     *
-     * @param userId The ID of the user.
-     * @param paymentRequestDTO The PaymentRequestDTO specifying payment details.
-     * @return The created OrderDTO.
-     * @throws IllegalArgumentException if the cart is empty or payment details are invalid.
-     * @throws RuntimeException if an error occurs during order creation or payment.
-     */
     @Transactional
-    public OrderDTO createOrderFromCart(Long userId, PaymentRequestDTO paymentRequestDTO) {
-        log.info("Attempting to create an order from cart for user ID: {}", userId);
+    public OrderResponseDto updatePaymentStatus(String orderNumber, UpdatePaymentStatusRequest request)
+            throws OrderNotFoundException {
 
-        CartDTO cartDTO = cartService.getOrCreateCart(userId);
+        logger.info("Updating payment status for order: {} to {}", orderNumber, request.getStatus());
 
-        if (cartDTO.getCartItems() == null || cartDTO.getCartItems().isEmpty()) {
-            log.error("Failed to create order for user ID: {}. Cart is empty.", userId);
-            throw new IllegalArgumentException("Cannot create an order from an empty cart.");
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
+
+        OrderPayment payment = order.getPayment();
+        if (payment == null) {
+            throw new OrderValidationException("Order has no payment record");
         }
 
-        // Convert CartDTO to OrderRequestDTO
-        OrderDTO orderDetails = OrderDTO.builder()
-                .userId(userId)
-                .orderItems(cartDTO.getCartItems().stream()
-                        .map(cartItem -> OrderItemDTO.builder()
-                                .productId(cartItem.getProductId())
-                                .quantity(cartItem.getQuantity())
-                                .price(cartItem.getPrice())
-                                .build())
-                        .collect(Collectors.toList()))
-                .build();
+        PaymentStatus previousStatus = payment.getStatus();
+        payment.setStatus(request.getStatus());
 
-        OrderRequestDTO orderRequestDTO = new OrderRequestDTO(orderDetails, paymentRequestDTO);
+        if (request.getTransactionId() != null) {
+            payment.setTransactionId(request.getTransactionId());
+        }
+        if (request.getPaymentDetails() != null) {
+            payment.setPaymentDetails(request.getPaymentDetails());
+        }
+        if (request.getErrorMessage() != null) {
+            payment.setErrorMessage(request.getErrorMessage());
+        }
 
-        OrderDTO createdOrder = createOrder(orderRequestDTO);
+        if (request.getStatus() == PaymentStatus.PAID) {
+            payment.setPaidAt(LocalDateTime.now());
+            order.setPaidAt(LocalDateTime.now());
+            order.setPaymentStatus(PaymentStatus.PAID);
 
-        // Clear the user's cart after a successful order creation
-        cartService.clearCart(userId);
-        log.info("Cart for user ID: {} cleared successfully after order creation.", userId);
+            // Update order status if payment successful
+            if (order.getStatus() == OrderStatus.PENDING) {
+                order.setStatus(OrderStatus.CONFIRMED);
+                order.addStatusHistory(OrderStatus.PENDING, OrderStatus.CONFIRMED,
+                        "Payment confirmed", null);
+            }
+        } else if (request.getStatus() == PaymentStatus.FAILED) {
+            order.setPaymentStatus(PaymentStatus.FAILED);
+        } else if (request.getStatus() == PaymentStatus.REFUNDED) {
+            payment.setRefundedAt(LocalDateTime.now());
+            order.setRefundedAt(LocalDateTime.now());
+            order.setPaymentStatus(PaymentStatus.REFUNDED);
+            order.setStatus(OrderStatus.REFUNDED);
+            order.addStatusHistory(order.getStatus(), OrderStatus.REFUNDED,
+                    "Payment refunded", null);
+        }
 
-        return createdOrder;
+        Order updatedOrder = orderRepository.save(order);
+
+        // Send payment confirmation email
+        if (request.getStatus() == PaymentStatus.PAID && previousStatus != PaymentStatus.PAID) {
+            try {
+                emailService.sendPaymentConfirmationEmail(order.getUser(), updatedOrder);
+            } catch (EmailFailureException e) {
+                logger.error("Failed to send payment confirmation email", e);
+            }
+        }
+
+        logger.info("Payment status updated successfully for order: {}", orderNumber);
+        return mapToResponseDto(updatedOrder);
     }
 
-    /**
-     * Retrieves an order by its ID.
-     * @param id The Long ID of the order.
-     * @return An Optional containing the OrderDTO if found, or empty if not found.
-     */
-    @Transactional(readOnly = true)
-    public Optional<OrderDTO> getOrderById(Long id) {
-        return orderDAO.findById(id).map(this::convertToDTO);
+    @Transactional
+    public OrderResponseDto cancelOrder(String orderNumber, String reason, User cancelledBy)
+            throws OrderNotFoundException, OrderValidationException {
+
+        logger.info("Cancelling order: {}", orderNumber);
+
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
+
+        if (!order.canBeCancelled()) {
+            throw new OrderValidationException("Order cannot be cancelled in current status: " + order.getStatus());
+        }
+
+        OrderStatus previousStatus = order.getStatus();
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
+        order.setFulfillmentStatus(FulfillmentStatus.CANCELLED);
+
+        // Release reserved stock
+        for (OrderItem item : order.getItems()) {
+            releaseReservedStock(item.getProduct().getId(), item.getQuantity());
+        }
+
+        // Add status history
+        order.addStatusHistory(previousStatus, OrderStatus.CANCELLED,
+                "Order cancelled: " + reason, cancelledBy);
+
+        Order updatedOrder = orderRepository.save(order);
+
+        // Send cancellation email
+        try {
+            emailService.sendOrderCancellationEmail(order.getUser(), updatedOrder, reason);
+        } catch (EmailFailureException e) {
+            logger.error("Failed to send order cancellation email", e);
+        }
+
+        logger.info("Order cancelled successfully: {}", orderNumber);
+        return mapToResponseDto(updatedOrder);
     }
 
-    /**
-     * Retrieves all orders for a specific user.
-     * @param userId The Long ID of the user.
-     * @return A list of OrderDTOs associated with the given user ID.
-     */
-    @Transactional(readOnly = true)
-    public List<OrderDTO> getOrdersByUserId(Long userId) {
-        List<Order> orders = orderDAO.findByUserId(userId);
-        return orders.stream()
-                .map(this::convertToDTO)
+    public OrderResponseDto getOrder(String orderNumber) throws OrderNotFoundException {
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderNumber));
+        return mapToResponseDto(order);
+    }
+
+    public OrderResponseDto getOrderById(Long orderId) throws OrderNotFoundException {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderNotFoundException("Order not found with ID: " + orderId));
+        return mapToResponseDto(order);
+    }
+
+    public Page<OrderSummaryDto> getUserOrders(String userEmail, Pageable pageable) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return orderRepository.findByUser(user, pageable)
+                .map(this::mapToSummaryDto);
+    }
+
+    public List<OrderSummaryDto> getUserOrdersByStatus(String userEmail, OrderStatus status) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return orderRepository.findByUserIdAndStatus(user.getId(), status).stream()
+                .map(this::mapToSummaryDto)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Updates the status of an existing order.
-     * @param id The Long ID of the order to update.
-     * @param newStatus The new status for the order.
-     * @return The updated OrderDTO.
-     * @throws EntityNotFoundException if the order with the given ID is not found.
-     */
-    @Transactional
-    public OrderDTO updateOrderStatus(Long id, OrderStatus newStatus) {
-        Order order = orderDAO.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Order not found with ID: " + id));
-
-        order.setStatus(newStatus);
-        Order updatedOrder = orderDAO.save(order);
-        return convertToDTO(updatedOrder);
+    public Page<OrderResponseDto> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable)
+                .map(this::mapToResponseDto);
     }
 
-    /**
-     * Deletes an order by its ID.
-     * @param id The Long ID of the order to delete.
-     * @throws EntityNotFoundException if the order with the given ID is not found.
-     */
+    public Page<OrderResponseDto> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByStatus(status, pageable)
+                .map(this::mapToResponseDto);
+    }
+
+    public Page<OrderResponseDto> searchOrders(String keyword, Pageable pageable) {
+        return orderRepository.searchOrders(keyword, pageable)
+                .map(this::mapToResponseDto);
+    }
+
+    public List<OrderResponseDto> getShopOrders(Long shopId) {
+        return orderItemRepository.findByShopId(shopId, Pageable.unpaged())
+                .map(orderItem -> mapToResponseDto(orderItem.getOrder()))
+                .stream()
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    public OrderStatsDto getOrderStats(LocalDateTime start, LocalDateTime end) {
+        Object[] stats = orderRepository.getOrderStatsForPeriod(start, end);
+
+        Long totalOrders = stats[0] != null ? ((Number) stats[0]).longValue() : 0L;
+        BigDecimal totalRevenue = stats[1] != null ? (BigDecimal) stats[1] : BigDecimal.ZERO;
+
+        return new OrderStatsDto(totalOrders, totalRevenue, start, end);
+    }
+
+    public ShopOrderStatsDto getShopOrderStats(Long shopId, LocalDateTime start, LocalDateTime end) {
+        BigDecimal revenue = orderItemRepository.calculateRevenueByShopForPeriod(shopId, start, end);
+        Long totalOrders = orderItemRepository.findByShopId(shopId, Pageable.unpaged())
+                .map(orderItem -> orderItem.getOrder().getId())
+                .stream()
+                .distinct()
+                .count();
+
+        return new ShopOrderStatsDto(shopId, totalOrders, revenue, start, end);
+    }
+
+    @Scheduled(fixedDelay = 300000) // Every 5 minutes
     @Transactional
-    public void deleteOrder(Long id) {
-        if (!orderDAO.existsById(id)) {
-            throw new EntityNotFoundException("Order not found with ID: " + id);
+    public void cancelExpiredPendingOrders() {
+        LocalDateTime cutoffTime = LocalDateTime.now().minusMinutes(PAYMENT_TIMEOUT_MINUTES);
+        List<Order> expiredOrders = orderRepository.findPendingPaymentsOlderThan(cutoffTime);
+
+        for (Order order : expiredOrders) {
+            try {
+                cancelOrder(order.getOrderNumber(), "Payment timeout - automatically cancelled", null);
+                logger.info("Auto-cancelled expired order: {}", order.getOrderNumber());
+            } catch (Exception e) {
+                logger.error("Failed to auto-cancel order: {}", order.getOrderNumber(), e);
+            }
         }
-        orderDAO.deleteById(id);
     }
 
-    /**
-     * Converts an Order model to an OrderDTO.
-     * @param order The Order model to convert.
-     * @return The corresponding OrderDTO.
-     */
-    private OrderDTO convertToDTO(Order order) {
-        List<OrderItemDTO> itemDTOs = order.getOrderItems().stream()
-                .map(item -> OrderItemDTO.builder()
-                        .id(item.getId())
-                        .productId(item.getProductId())
-                        .quantity(item.getQuantity())
-                        .price(item.getPrice())
-                        .build())
+    // Private helper methods
+    private OrderShipping createShipping(Order order, ShippingAddressRequest request) {
+        return OrderShipping.builder()
+                .order(order)
+                .fullName(request.getFullName())
+                .email(request.getEmail())
+                .phone(request.getPhone())
+                .addressLine1(request.getAddressLine1())
+                .addressLine2(request.getAddressLine2())
+                .city(request.getCity())
+                .state(request.getState())
+                .postalCode(request.getPostalCode())
+                .country(request.getCountry())
+                .build();
+    }
+
+    private OrderPayment createPayment(Order order, PaymentMethod paymentMethod, BigDecimal amount) {
+        return OrderPayment.builder()
+                .order(order)
+                .paymentMethod(paymentMethod)
+                .amount(amount)
+                .currency(order.getCurrency())
+                .status(PaymentStatus.PENDING)
+                .build();
+    }
+
+    private OrderItem createOrderItem(Order order, OrderItemRequest request)
+            throws InsufficientStockException {
+
+        Product product = productRepository.findById(request.getProductId())
+                .orElseThrow(() -> new RuntimeException("Product not found: " + request.getProductId()));
+
+        // Validate stock
+        if (product.getQuantity() < request.getQuantity()) {
+            throw new InsufficientStockException(
+                    String.format("Insufficient stock for product %s. Available: %d, Requested: %d",
+                            product.getName(), product.getQuantity(), request.getQuantity()));
+        }
+
+        // Reserve stock
+        reserveStock(product.getId(), request.getQuantity());
+
+        OrderItem orderItem = OrderItem.builder()
+                .order(order)
+                .product(product)
+                .shop(product.getShop())
+                .productName(product.getName())
+                .productSku(product.getSku())
+                .productImage(product.getMainImageUrl())
+                .quantity(request.getQuantity())
+                .unitPrice(product.getPrice())
+                .compareAtPrice(product.getCompareAtPrice())
+                .notes(request.getNotes())
+                .fulfillmentStatus(FulfillmentStatus.PENDING)
+                .build();
+
+        orderItem.calculateTotalPrice();
+        return orderItemRepository.save(orderItem);
+    }
+
+    private void reserveStock(Long productId, Integer quantity) {
+        Product product = productRepository.findById(productId).orElse(null);
+        if (product != null) {
+            product.setQuantity(product.getQuantity() - quantity);
+            product.setReservedQuantity(product.getReservedQuantity() + quantity);
+            productRepository.save(product);
+        }
+    }
+
+    private void releaseReservedStock(Long productId, Integer quantity) {
+        Product product = productRepository.findById(productId).orElse(null);
+        if (product != null) {
+            product.setQuantity(product.getQuantity() + quantity);
+            product.setReservedQuantity(product.getReservedQuantity() - quantity);
+            productRepository.save(product);
+        }
+    }
+
+    private void clearUserCart(User user) {
+        cartRepository.findByUser(user).ifPresent(cart -> {
+            cart.getItems().clear();
+            cart.setTotalItems(0);
+            cartRepository.save(cart);
+        });
+    }
+
+    private void validateStatusTransition(OrderStatus from, OrderStatus to)
+            throws InvalidOrderStatusTransitionException {
+
+        Map<OrderStatus, Set<OrderStatus>> allowedTransitions = Map.of(
+                OrderStatus.PENDING, Set.of(OrderStatus.CONFIRMED, OrderStatus.PROCESSING,
+                        OrderStatus.CANCELLED, OrderStatus.PAYMENT_FAILED),
+                OrderStatus.CONFIRMED, Set.of(OrderStatus.PROCESSING, OrderStatus.CANCELLED),
+                OrderStatus.PROCESSING, Set.of(OrderStatus.SHIPPED, OrderStatus.CANCELLED),
+                OrderStatus.SHIPPED, Set.of(OrderStatus.DELIVERED),
+                OrderStatus.DELIVERED, Set.of(OrderStatus.COMPLETED, OrderStatus.REFUNDED),
+                OrderStatus.COMPLETED, Set.of(OrderStatus.REFUNDED)
+        );
+
+        Set<OrderStatus> allowed = allowedTransitions.getOrDefault(from, Set.of());
+        if (!allowed.contains(to)) {
+            throw new InvalidOrderStatusTransitionException(
+                    String.format("Cannot transition from %s to %s", from, to));
+        }
+    }
+
+    private void updateOrderTimestamps(Order order, OrderStatus newStatus) {
+        switch (newStatus) {
+            case CONFIRMED:
+                order.setOrderedAt(LocalDateTime.now());
+                break;
+            case SHIPPED:
+                order.setShippedAt(LocalDateTime.now());
+                break;
+            case DELIVERED:
+                order.setDeliveredAt(LocalDateTime.now());
+                break;
+            case CANCELLED:
+                order.setCancelledAt(LocalDateTime.now());
+                break;
+            case REFUNDED:
+                order.setRefundedAt(LocalDateTime.now());
+                break;
+            default:
+                break;
+        }
+    }
+
+    private OrderResponseDto mapToResponseDto(Order order) {
+        List<OrderItemResponseDto> itemDtos = order.getItems().stream()
+                .map(this::mapToItemResponseDto)
                 .collect(Collectors.toList());
 
-        return OrderDTO.builder()
-                .id(order.getId())
-                .userId(order.getUserId())
-                .orderDate(order.getOrderDate())
-                .totalAmount(order.getTotalAmount())
-                .status(order.getStatus())
-                .orderItems(itemDTOs)
-                .build();
+        OrderShippingResponseDto shippingDto = null;
+        if (order.getShipping() != null) {
+            OrderShipping s = order.getShipping();
+            shippingDto = new OrderShippingResponseDto(
+                    s.getId(), s.getFullName(), s.getEmail(), s.getPhone(),
+                    s.getAddressLine1(), s.getAddressLine2(), s.getCity(),
+                    s.getState(), s.getPostalCode(), s.getCountry(),
+                    s.getShippingMethod(), s.getTrackingNumber(), s.getTrackingUrl(),
+                    s.getCarrier(), s.getEstimatedDelivery(), s.getShippedAt(), s.getDeliveredAt()
+            );
+        }
+
+        OrderPaymentResponseDto paymentDto = null;
+        if (order.getPayment() != null) {
+            OrderPayment p = order.getPayment();
+            paymentDto = new OrderPaymentResponseDto(
+                    p.getId(), p.getPaymentMethod(), p.getTransactionId(),
+                    p.getAmount(), p.getCurrency(), p.getStatus(),
+                    p.getPaymentDetails(), p.getPaidAt(), p.getRefundAmount(), p.getRefundedAt()
+            );
+        }
+
+        List<OrderStatusHistoryResponseDto> historyDtos = order.getStatusHistory().stream()
+                .map(h -> new OrderStatusHistoryResponseDto(
+                        h.getId(), h.getPreviousStatus(), h.getNewStatus(),
+                        h.getNotes(),
+                        h.getChangedBy() != null ?
+                                h.getChangedBy().getFirstName() + " " + h.getChangedBy().getSurname() : "System",
+                        h.getCreatedAt()
+                ))
+                .collect(Collectors.toList());
+
+        return new OrderResponseDto(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getUser().getId(),
+                order.getUser().getEmail(),
+                order.getUser().getFirstName() + " " + order.getUser().getSurname(),
+                order.getStatus(),
+                order.getPaymentStatus(),
+                order.getFulfillmentStatus(),
+                itemDtos,
+                shippingDto,
+                paymentDto,
+                historyDtos,
+                order.getSubtotal(),
+                order.getShippingCost(),
+                order.getTax(),
+                order.getDiscount(),
+                order.getTotal(),
+                order.getNotes(),
+                order.getCustomerNotes(),
+                order.getCouponCode(),
+                order.getCurrency(),
+                order.getCreatedAt(),
+                order.getUpdatedAt(),
+                order.getOrderedAt(),
+                order.getPaidAt(),
+                order.getShippedAt(),
+                order.getDeliveredAt(),
+                order.getCancelledAt(),
+                order.canBeCancelled(),
+                order.canBeRefunded()
+        );
+    }
+
+    private OrderItemResponseDto mapToItemResponseDto(OrderItem item) {
+        return new OrderItemResponseDto(
+                item.getId(),
+                item.getProduct().getId(),
+                item.getProductName(),
+                item.getProductSku(),
+                item.getProductImage(),
+                item.getProduct().getSlug(),
+                item.getShop().getId(),
+                item.getShop().getName(),
+                item.getQuantity(),
+                item.getUnitPrice(),
+                item.getCompareAtPrice(),
+                item.getTotalPrice(),
+                item.getDiscount(),
+                item.getTax(),
+                item.getSavings(),
+                item.getNotes(),
+                item.getFulfillmentStatus()
+        );
+    }
+
+    private OrderSummaryDto mapToSummaryDto(Order order) {
+        return new OrderSummaryDto(
+                order.getId(),
+                order.getOrderNumber(),
+                order.getStatus(),
+                order.getPaymentStatus(),
+                order.getItems().size(),
+                order.getTotal(),
+                order.getCreatedAt()
+        );
     }
 }

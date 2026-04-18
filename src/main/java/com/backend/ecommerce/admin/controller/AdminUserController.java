@@ -1,6 +1,6 @@
 package com.backend.ecommerce.admin.controller;
 
-import com.backend.ecommerce.user.dto.UserResponseDto;
+import com.backend.ecommerce.user.payload.UserResponseDto;
 import com.backend.ecommerce.user.service.UserService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;

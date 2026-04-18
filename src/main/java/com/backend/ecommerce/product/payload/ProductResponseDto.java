@@ -1,0 +1,56 @@
+// src/main/java/com/backend/ecommerce/product/payload/ProductResponseDto.java
+package com.backend.ecommerce.product.payload;
+
+import com.backend.ecommerce.product.model.ProductStatus;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+public record ProductResponseDto(
+        Long id,
+        String name,
+        String slug,
+        String sku,
+        String description,
+        String shortDescription,
+        BigDecimal price,
+        BigDecimal compareAtPrice,
+        BigDecimal costPrice,
+        BigDecimal discountPercentage,
+        Integer quantity,
+        Integer reservedQuantity,
+        Integer availableQuantity,
+        String skuBarcode,
+        Double weight,
+        String weightUnit,
+        String dimensions,
+        Long shopId,
+        String shopName,
+        String shopSlug,
+        Long categoryId,
+        String categoryName,
+        String brand,
+        List<String> tags,
+        ProductStatus status,
+        Boolean isFeatured,
+        Boolean isDigital,
+        String digitalFileUrl,
+        Integer lowStockThreshold,
+        Boolean isLowStock,
+        Boolean isOutOfStock,
+        Boolean isInStock,
+        String mainImageUrl,
+        List<String> images,
+        String videoUrl,
+        String metaTitle,
+        String metaDescription,
+        String metaKeywords,
+        Double averageRating,
+        Integer totalReviews,
+        Integer totalSales,
+        Long viewCount,
+        LocalDateTime createdAt,
+        LocalDateTime updatedAt,
+        LocalDateTime publishedAt
+) {}
